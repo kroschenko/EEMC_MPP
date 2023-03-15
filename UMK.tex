@@ -33,6 +33,28 @@
 \usepackage{longtable}% Эту команду не стоит менять
 
 \usepackage{regexpatch}
+\usepackage{listings}
+\definecolor{keyword}{RGB}{0,0,150}
+\definecolor{identifier}{RGB}{0,0,0}
+\definecolor{comment}{RGB}{128,128,128}
+\definecolor{string}{RGB}{0,128,0}
+\definecolor{numbers}{RGB}{128,128,128}
+\lstdefinestyle{customjava}{
+  belowcaptionskip=1\baselineskip,
+  breaklines=true,
+  frame=L,
+  xleftmargin=\parindent,
+  language=java,
+  numbers=left,
+  showstringspaces=false,
+  basicstyle=\small\ttfamily,
+  numberstyle=\color{numbers},
+  keywordstyle=\bfseries\color{keyword},
+  commentstyle=\itshape\color{comment},
+  identifierstyle=\color{identifier},
+  stringstyle=\color{string},
+}
+\lstset{escapechar=@,style=customjava}
 \makeatletter
 \xpatchcmd*\@Overlay@Hook{\put(\strip@pt\@tempdima,\strip@pt\@tempdima)}
 {\put(\strip@pt\@tempdima,\strip@pt\dimexpr.5\paperheight)}{}{}
@@ -482,6 +504,21 @@
 комплекса. Внимательно прочитайте все рекомендации <<Руководства пользователю>>.
 
 Несколько важных моментов из <<Руководства пользователю>> мы продублируем и здесь.
+
+Начнем с самого главного -- примера оформления программного кода в \LaTeX:
+
+\begin{lstlisting}
+    //example of simple java-program
+    public class HelloWorld
+    {
+        public static void main(String[] args)
+        {
+            int i = 12;
+            int a = i + 100;
+            System.out.println("Hello, world!");
+        }
+    }
+\end{lstlisting}
 
 Определенные части текста (не содержащие формул, таблиц и иллюстраций -- о них речь пойдет
 ниже) могут быть скопированы и вставлены  в рабочий документ из любого
