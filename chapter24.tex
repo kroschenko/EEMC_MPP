@@ -1,0 +1,255 @@
+\newpage
+\chapter{Проектирование по контракту, логирование}
+
+\section{Концепция проектирования по контракту, понятия предусловия, постусловия и инварианта класса}
+
+\textbf{Проектирование (программирование) по контракту} –  метод проектирования программного обеспечения, предполагающий документирование (и согласование) прав и обязанностей программных модулей в целях обеспечения корректности программы. Сама программа считается \textbf{корректной}, если она выполняет именно то, что изначально требуется от неё.
+
+Основная идея контрактного программирования — это модель взаимодействия элементов программной системы, основывающаяся на идее взаимных обязательств и преимуществ. Как и в бизнесе, клиент и поставщик действуют в соответствии с определённым контрактом. Контракт некоторого метода или функции может включать в себя:
+
+\begin{enumerate}
+    \item конкретные обязательства, которые любой клиентский модуль должен выполнить перед вызовом метода — \textbf{предусловия}, которые дают преимущество для поставщика — он может не проверять выполнение предусловий;
+    \item конкретные свойства, которые должны присутствовать после выполнения метода — \textbf{постусловия}, которые входят в обязательства поставщика;
+    \item обязательства по выполнению конкретных свойств — \textbf{инвариантов}, которые должны выполняться при получении поставщиком сообщения, а также при выходе из метода.
+\end{enumerate}
+
+В целом для контрактного программирования можно выразить следующую идею: «Если клиент, вызывающий подпрограмму, выполняет все предусловия, то вызываемая подпрограмма обязуется, что после ее выполнения все постусловия и инварианты будут истинными». Другими словами, между клиентом и программой заключается некий "контракт", согласно которому обе стороны обязуются выполнять свою часть сделки. Если же одна из сторон так или иначе нарушает свою договорённость, то обычно выполняется специально оговорённая мера: исключение, вывод предупреждения или завершение программы.
+
+Приведём пример кода на Java, основанного на контрактной идее:
+
+\begin{lstlisting}
+import com.google.java.contract.*;
+import com.google.common.collect.*;
+import org.apache.commons.lang3.builder.EqualsBuilder;
+import org.apache.commons.lang3.builder.HashCodeBuilder;
+ 
+@Invariant({"title != null && title.length() > 0", "price > 0"})
+public class Book {
+    private final String title;
+    private int price;
+ 
+    @Requires({"title != null && title.length() > 0", "price > 0"})
+    public Book(String title, int price) {
+        this.title = title;
+        this.price = price;
+    }
+ 
+    public int getPrice() {
+        return price;
+    }
+ 
+    @Requires("price > 0")
+    public void setPrice(int price) {
+        this.price = price;
+    }
+ 
+    public String getTitle() {
+        return title;
+    }
+ 
+    @Override
+    public boolean equals(Object obj) {
+        return EqualsBuilder.reflectionEquals(this, obj, "price");
+    }
+ 
+    @Override
+    public int hashCode() {
+        return HashCodeBuilder.reflectionHashCode(this, "price");
+    }
+}
+
+@Invariant("books != null")
+public class ShoppingCart {
+    private final Multiset<Book> books = HashMultiset.create();
+ 
+    @Requires("book != null")
+    @Ensures("books.count(book) == old(books.count(book)) + copies")
+    public void addBooks(Book book, int copies) {
+        books.add(book, copies);
+    }
+ 
+    @Requires({"book != null", "books.count(book) >= copies"})
+    @Ensures("books.count(book) == old(books.count(book)) - copies")
+    public void removeBooks(Book book, int copies) {
+        books.remove(book, copies);
+    }
+ 
+    @Requires("book != null")
+    @Ensures("books.count(book) == old(books.count(book)) - copies")
+    @ThrowEnsures("books.count(book) == old(books.count(book))")
+    public void removeBooksUnsafe(Book book, int copies) {
+        if (books.count(book) >= copies) {
+            books.remove(book, copies);
+        } else {
+            throw new IllegalStateException("Not enough books to remove");
+        }
+    }
+ 
+    @Ensures("result >= 0")
+    public int getTotal() {
+        int total = 0;
+        for (Book book : books) {
+            total += book.getPrice() * books.count(book);
+        }
+        return total;
+    }
+ 
+    public static void main(String[] args) {
+        Book hp = new Book("Harry Potter and the Goblet of Fire", 10);
+        Book hhg = new Book("The Hitchhiker's Guide to the Galaxy", 12);
+        Book lotr = new Book("The Two Towers", 15);
+ 
+        ShoppingCart cart = new ShoppingCart();
+        cart.addBooks(hp, 1);
+        cart.addBooks(hhg, 2);
+        cart.addBooks(lotr, 3);
+        System.out.println("initial total = " + cart.getTotal());
+ 
+        cart.removeBooks(hp, 1);
+        System.out.println("total after removing = " + cart.getTotal());
+ 
+        try {
+            cart.removeBooksUnsafe(hhg, 4);
+        } catch (IllegalStateException e) {
+            System.out.println("error message: " + e.getMessage());
+        }
+        System.out.println("total after exception = " + cart.getTotal());
+ 
+        cart.removeBooks(hhg, 4);
+    }
+}
+\end{lstlisting}
+
+Отметим, что в Java присутствуют специальные аннотации, позволяющие контролировать те или иные концепии контрактов:
+
+\begin{enumerate}
+    \item \verb|@Invariant| — проверяет инварианты после выполнения конструктора и всех методов класса — благодаря чему можно контролировать, что основные требуемые функции выполняются;
+    \item \verb|@Requires| — проверяет предусловия — выполнение методов допускается в том случае, если передаваемые в него методы соответствуют некоторому условию;
+    \item \verb|@Ensures| — проверяет постусловия — позволяет убедиться, что метод действительно выполнил свою часть; работы;
+    \item \verb|@ThrowEnsures| — усиленный предыдущий вариант выбрасывающий исключение при нарушении условия.
+\end{enumerate}
+
+При создании каждого объекта класса (\verb|Book| и \verb|ShoppingMart|) начинают работать инварианты, позволяющие контролировать свойства и методы — вдруг в результате выполнение критические части будут сломаны или потеряны. Когда выполняется каждый из методов, сначала предъявляются требования к передаваемым переменным от клиента, после чего программный метод выполняет свою работу. При её завершении проверяется, что код действительно выполнил свою часть контракта, а не исказил или проигнорировал данные.
+
+Таким образом, при выполнении контракта можно удостовериться в том, что клиент передаст корректные данные программе, а та корректно обработает их в соответствии с правилами или вернёт ошибку при любых ошибках или несоответствиях.
+
+\section{Логирование и его реализация}
+
+\textbf{Логирование Java} — это процесс, при котором программа на Java-языке записывает сведения о своем исполнении в некий файл или базу данных. Логирование дает возможность отслеживать ход исполнения программы и конкретно кода.
+
+В программировании \textbf{лог} — это специальный файл, который выполняет функцию «бортового журнала» программы. Именно в этот файл, а точнее, в лог программа производит записи о своей работе. Лог-файлы программа может создавать самостоятельно, чтобы вносить туда текстовые пометки.
+
+Лог-файлы помогают «следить» за действиями программы, например, что она функционирует в конкретный момент времени или как она реагирует на действия пользователя.
+
+У одного программного продукта лог-файлы могут быть разные. Например, может быть лог-файл типа:
+
+\begin{enumerate}
+    \item \verb|access_log|, в котором фиксируются действия программы при ее взаимодействии с пользователями;
+    \item \verb|error_log|, в котором фиксируются все ошибки, произошедшие в результате работы программы;
+    \item и пр.
+\end{enumerate}
+
+В одном лог-файле может быть множество записей, где каждая строчка будет содержать отдельные результаты для каждого взаимодействия с программой. То есть в каждой записи будет информация о том, что происходило с программным продуктом в конкретный момент времени.
+
+Отметим различия между «логированием» и «логом»:
+
+\begin{enumerate}
+    \item Логирование — это процесс, при котором программа прописывает какие-то записи в лог-файлы;
+    \item Лог — это сам файл или то место, куда программа производит необходимые записи.
+\end{enumerate}
+
+Иногда требуется ограничивать логи по какому-либо критерию: например, они должны содержать только ошибки, либо  только предупреждения, либо содержать все данные. Причиной считается возможное слишком быстрое заполнение лога, из-за становится трудным найти необходимую запись. Поэтому, чтобы контролировать объемы записываемой информации, придумали различные уровни логирования.
+
+Уровни логирования применяются в программах на различных языках программирования, в том числе и на Java. Различают несколько основных уровней, в порядке увеличения данных:
+
+\begin{enumerate}
+    \item \verb|OFF| — сообщения не выводятся;
+    \item \verb|FATAL| — выводятся фатальные ошибки;
+    \item \verb|ERROR| — выводятся обычные ошибки;
+    \item \verb|WARNING| — выводятся предупреждения, обычно не приводящие к прерыванию программы;
+    \item \verb|INFO| — выводятся обычные и стандартные сообщения;
+    \item \verb|DEBUG| — выводится информация, которая пригодится для отладки программы;
+    \item \verb|TRACE| — выводится информация для точной отладки;
+    \item \verb|ALL| — выводится вся информация.
+\end{enumerate}
+
+В таком случае можно внутри программы разграничить логирование таким образом, чтобы сразу видеть, например, основную информацию (в том числе предупреждения и ошибки), либо информацию для дебага, либо всю доступную информацию, либо вообще ничего (впрочем, данный пункт не рекомендуется использовать, если только логирование не влияет на производительность ПК).
+
+Для логирования данных на Java существует несколько специализированных библиотек:
+
+\begin{enumerate}
+    \item \verb|java.util.logging (JUL)| (примечателен тем, что поставляется вместе с JDK);
+    \item \verb|Apache log4j|;
+    \item \verb|logback|;
+    \item \verb|Apache log4j2|;
+    \item \verb|JCL|;
+    \item \verb|SLF4J|;
+\end{enumerate}
+
+В основе этих библиотек лежат три понятия:
+
+\begin{enumerate}
+    \item \verb|logger| — объект, область ответственности которого - вывод данных в лог и управление уровнем (детализацией) этого вывода;
+    \item \verb|appender| — некоторая точка, в которую помещаются все логи и сообщения (файл, БД, консоль и т.п.);
+    \item \verb|layout| — как именно данные представляются пользователю.
+\end{enumerate}
+
+На данный момент рекомендуется использовать библиотеки \verb|SLF4J| и \verb|logback|, особенно вместе, поскольку они позволяют наиболее полно использовать возможности логирования данных. Тем не менее, в данном учебнике будет рассматривать наиболее простая из представленных выше библиотек — \verb|JUL|.
+
+\section{Библиотека логирования java.util.logging (JUL)}
+
+Эта библиотека-логер, как уже упоминалось ранее, поставляется вместе с JDK. \verb|Layout| данного логера содержит \textbf{дата-время (автоматически), уровень события и, собственно, само сообщение}.
+
+Отдельно поговорим об уровнях событий. В основном они повторяют основные уровни, о которых говорилось ранее, однако имеются отдельные различия в наименованиях: так, все ошибки, фатальные или нет, определяются как \verb|SEVERE|, а отладочные сообщения определяются как \verb|FINE|, \verb|FINER| и \verb|FINEST|, в порядке увеличения вывода дополнительных данных. Так или иначе, грань между близкими друг к другу уровнями довольно тонка, и поэтому, если это возможно, ею можно пренебречь.
+
+Все выводимые данные можно настроить, т.е. указать, куда записывать логи, что именно писать, как писать и т.д. (другими словами, мы можем настроить и \verb|logger|, и \verb|appender|, и \verb|layout|). Для этого используется файл \verb|logging.properties|, куда и записывуются правила для логирования данных. Обычно используют \verb|java.util.logging.ConsoleHandler| и \verb|java.util.logging.FileHandler| для консоли и файлов соответственно; также для них можно настроить \verb|.level| — максимальный уровень данных для вывода; \verb|.limit| — лимит данных и т.п.
+
+Пример кода, использующий данную библиотеку:
+
+\begin{lstlisting}
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+ 
+public class JulExample {
+ 
+    public static final Logger logger = Logger.getLogger(
+            JulExample.class.getName());
+    
+    public static void main(String[] args) {
+        logger.info("Application started and constructed.");
+        logger.warning("Something to warn");
+        logger.severe("Something failed.");
+        try {
+            Files.readAllBytes(Paths.get("/file/does/not/exist"));
+        } catch (IOException ioex) {
+            logger.log(Level.SEVERE, "Error message", ioex);
+        }
+    }
+ 
+}
+\end{lstlisting}
+
+В результате в консоль выведется следующая информация:
+
+\begin{lstlisting}
+Apr 20, 2023 6:00:41 PM JulExample main
+INFO: Application started and constructed.
+Apr 20, 2023 6:00:41 PM JulExample main
+WARNING: Something to warn
+Apr 20, 2023 6:00:41 PM JulExample main
+SEVERE: Something failed.
+java.nio.file.NoSuchFileException: \file\does\not\exist
+	at sun.nio.fs.WindowsException.translateToIOException(WindowsException.java:79)
+	at sun.nio.fs.WindowsException.rethrowAsIOException(WindowsException.java:97)
+	at sun.nio.fs.WindowsException.rethrowAsIOException(WindowsException.java:102)
+	at sun.nio.fs.WindowsFileSystemProvider.newByteChannel(WindowsFileSystemProvider.java:230)
+	at java.nio.file.Files.newByteChannel(Files.java:361)
+	at java.nio.file.Files.newByteChannel(Files.java:407)
+	at java.nio.file.Files.readAllBytes(Files.java:3152)
+	at JulExample.main(JulExample.java:17)
+\end{lstlisting}
+
+\label{pages_total}
